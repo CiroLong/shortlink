@@ -59,7 +59,7 @@ func SaveUrlMapping(shortURL string, longURL string, id string) error {
 		}
 		err := db.MySql.Save(&link).Error
 		if err != nil {
-			fmt.Errorf("mysql write error:", err.Error())
+			fmt.Println("mysql write error:", err.Error())
 		}
 	}()
 

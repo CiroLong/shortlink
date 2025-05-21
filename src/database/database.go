@@ -31,23 +31,23 @@ func init() {
 func InitRedis() {
 
 	c := config.GetConfig()
-	redis := redis.NewClient(&redis.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr:     c.Redis.Addr,
 		Password: c.Redis.Password,
 		DB:       c.Redis.DB,
 	})
-	_, err := redis.Ping(db.Ctx).Result()
+	_, err := client.Ping(db.Ctx).Result()
 	if err != nil {
-		panic("failed to connect redis")
+		panic("failed to connect client")
 	}
-	db.Redis = redis
+	db.Redis = client
 }
 
 func InitDB() {
 	dsn := config.GetConfig().Mysql.Dsn
-	mysql, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	gDB, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.MySql = mysql
+	db.MySql = gDB
 }

@@ -28,7 +28,7 @@ func main() {
 	r.POST("/shorten", handler.ShortenURL)
 	r.GET("/:code", handler.ResolveURL)
 
-	if err := r.Run(":8088"); err != nil {
+	if err := r.Run(":80"); err != nil {
 		panic(fmt.Sprintf("Failed to start the web server - Error: %v", err))
 	}
 }

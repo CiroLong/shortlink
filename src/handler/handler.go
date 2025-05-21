@@ -26,7 +26,7 @@ func ShortenURL(c *gin.Context) {
 		})
 	}
 
-	host := "http://localhost:8088/"
+	host := "http://localhost/"
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "short url created successfully",
 		"short_url": host + shortURL,
