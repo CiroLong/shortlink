@@ -8,8 +8,6 @@
 
 ### ⚡ 高并发优化：使用 Redis 缓存计数，异步批量写入数据库
 
-### 🧹 定时清理：自动清理过期链接和缓存数据
-
 ### 🐳 容器化部署：提供 Docker 支持，快速部署
 
 ## 🛠 技术栈
@@ -28,12 +26,12 @@
 ## 📁 项目结构
 ```bash
 shortlink/
-├── config/             # 配置文件和初始化
+├── config/             # 配置文件
 ├── src/
 │   ├── handler/        # 路由处理器
-│   ├── model/          # 数据模型
+│   ├── config/         # 配置加载
 │   ├── service/        # 业务逻辑
-│   └── utils/          # 工具函数
+│   └── database/       # 数据库封装
 ├── main.go             # 应用入口
 ├── Dockerfile          # Docker 构建文件
 ├── docker_compose_config.yml # Docker Compose 配置
