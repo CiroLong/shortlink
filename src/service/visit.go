@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/CiroLong/shortlink/src/database"
 	"gorm.io/gorm"
+	"log"
 	"strings"
 	"time"
 )
@@ -16,13 +17,16 @@ func SyncVisitCounts() {
 		batchInterval := time.Hour            // 批量同步间隔
 		threshold := int64(3)                 // 阈值
 		thresholdInterval := 10 * time.Second // 阈值检测频率
+
 		ticker := time.NewTicker(thresholdInterval)
 		defer ticker.Stop()
+		mySqlTicker := time.NewTicker(batchInterval)
+		defer mySqlTicker.Stop()
 
 		for {
 			// 每 xxx 将redis 写入 mysql
 			select {
-			case <-time.After(batchInterval):
+			case <-mySqlTicker.C:
 				{
 					iter := db.Redis.Scan(db.Ctx, 0, "visit:*", 0).Iterator()
 					for iter.Next(db.Ctx) {
@@ -36,6 +40,19 @@ func SyncVisitCounts() {
 
 						// 清除 Redis 记录
 						db.Redis.Del(db.Ctx, key)
+					}
+
+					//
+
+					now := time.Now().UTC()
+					result := db.MySql.
+						Where("expire_at IS NOT NULL AND expire_at < ?", now).
+						Delete(&Link{})
+
+					if result.Error != nil {
+						log.Printf("[Cleaner] 删除过期链接失败: %v", result.Error)
+					} else {
+						log.Printf("[Cleaner] 清理过期链接成功，共删除 %d 条", result.RowsAffected)
 					}
 				}
 
