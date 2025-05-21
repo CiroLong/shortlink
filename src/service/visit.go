@@ -2,8 +2,8 @@ package service
 
 import (
 	"fmt"
+	"github.com/CiroLong/shortlink/src/database"
 	"gorm.io/gorm"
-	"shortlink/src/database"
 	"strings"
 	"time"
 )

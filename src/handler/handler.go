@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"github.com/CiroLong/shortlink/src/service"
 	"github.com/gin-gonic/gin"
 	"net/http"
-	"shortlink/src/service"
 )
 
 func ShortenURL(c *gin.Context) {

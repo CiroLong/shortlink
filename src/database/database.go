@@ -2,10 +2,10 @@ package database
 
 import (
 	"context"
+	"github.com/CiroLong/shortlink/src/config"
 	"github.com/go-redis/redis/v8"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"shortlink/src/config"
 	"time"
 )
 

@@ -4,11 +4,11 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/CiroLong/shortlink/src/database"
 	"github.com/go-redis/redis/v8"
 	"github.com/itchyny/base58-go"
 	"math/big"
 	"os"
-	"shortlink/src/database"
 )
 
 type Link struct {

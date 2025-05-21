@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
+	"github.com/CiroLong/shortlink/src/config"
+	"github.com/CiroLong/shortlink/src/database"
+	"github.com/CiroLong/shortlink/src/handler"
+	"github.com/CiroLong/shortlink/src/service"
 	"github.com/gin-gonic/gin"
-	"shortlink/src/config"
-	"shortlink/src/database"
-	"shortlink/src/handler"
-	"shortlink/src/service"
 )
 
 func main() {

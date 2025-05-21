@@ -1,4 +1,4 @@
-module shortlink
+module github.com/CiroLong/shortlink
 
 go 1.23
 
