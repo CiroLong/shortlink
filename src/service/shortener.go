@@ -9,12 +9,14 @@ import (
 	"github.com/itchyny/base58-go"
 	"math/big"
 	"os"
+	"time"
 )
 
 type Link struct {
-	ShortURL    string `gorm:"short_url;primary_key" json:"short_url"`
-	OriginalUrl string `gorm:"original_url" json:"original_url"`
-	VisitCount  uint   `gorm:"visit_count" json:"visit_count"`
+	ShortURL    string    `gorm:"short_url;primary_key" json:"short_url"`
+	OriginalUrl string    `gorm:"original_url" json:"original_url"`
+	VisitCount  uint      `gorm:"visit_count" json:"visit_count"`
+	ExpireAt    time.Time `gorm:"expire_at" json:"expire_at"`
 }
 
 func AutoMigrate() {
@@ -56,6 +58,8 @@ func SaveUrlMapping(shortURL string, longURL string, id string) error {
 		link := Link{
 			ShortURL:    shortURL,
 			OriginalUrl: longURL,
+			VisitCount:  0,
+			ExpireAt:    time.Now().Add(database.CacheDuration * 2),
 		}
 		err := db.MySql.Save(&link).Error
 		if err != nil {
@@ -70,11 +74,23 @@ func SaveUrlMapping(shortURL string, longURL string, id string) error {
 func RetrieveInitialUrl(shortURL string) (string, error) {
 	db := database.GetDB()
 	result, err := db.Redis.Get(db.Ctx, shortURL).Result()
+	var link Link
 	if errors.Is(err, redis.Nil) {
-		var link Link
 		if err := db.MySql.First(&link, shortURL).Error; err != nil {
 			return "", err
 		}
+		if link.ExpireAt.Before(time.Now()) {
+			return "", errors.New("link expired")
+		}
+
+		go func() {
+			err := db.Redis.Set(db.Ctx, shortURL, link.OriginalUrl, database.CacheDuration).Err()
+			if err != nil {
+				panic("write redis fail" + err.Error())
+			}
+		}()
+
+		result = link.OriginalUrl
 	} else if err != nil {
 		panic(fmt.Sprintf("Failed RetrieveInitialUrl url | Error: %v - shortUrl: %s\n", err, shortURL))
 	}
