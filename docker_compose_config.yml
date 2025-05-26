@@ -18,6 +18,9 @@ services:
       - REDIS_DB=0
     networks:
       - app-network
+    volumes:
+      - ./config/app.yaml:/app/config/app.yaml # 挂载本地配置文件
+
 
   mysql:
     image: mysql:5.7
