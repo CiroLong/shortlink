@@ -5,6 +5,7 @@ import (
 	"github.com/CiroLong/shortlink/src/config"
 	"github.com/CiroLong/shortlink/src/database"
 	"github.com/CiroLong/shortlink/src/handler"
+	"github.com/CiroLong/shortlink/src/middleware"
 	"github.com/CiroLong/shortlink/src/service"
 	"github.com/gin-gonic/gin"
 )
@@ -17,6 +18,7 @@ func main() {
 
 	service.AutoMigrate()
 	service.SyncVisitCounts()
+	service.RebuildBloomFilter()
 
 	r := gin.Default()
 	r.GET("/", func(c *gin.Context) {
@@ -26,7 +28,7 @@ func main() {
 	})
 
 	r.POST("/shorten", handler.ShortenURL)
-	r.GET("/:code", handler.ResolveURL)
+	r.GET("/:code", handler.ResolveURL, middleware.BloomFilterMiddleware())
 
 	if err := r.Run(":80"); err != nil {
 		panic(fmt.Sprintf("Failed to start the web server - Error: %v", err))

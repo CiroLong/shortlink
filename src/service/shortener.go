@@ -1,14 +1,10 @@
 package service
 
 import (
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"github.com/CiroLong/shortlink/src/database"
 	"github.com/go-redis/redis/v8"
-	"github.com/itchyny/base58-go"
-	"math/big"
-	"os"
 	"time"
 )
 
@@ -19,32 +15,16 @@ type Link struct {
 	ExpireAt    time.Time `gorm:"expire_at" json:"expire_at"`
 }
 
+// AutoMigrate performs automatic database migrations for the Link model.
 func AutoMigrate() {
 	db := database.GetDB()
 	db.MySql.AutoMigrate(&Link{})
 }
 
-func sha256Of(input string) []byte {
-	algorithm := sha256.New()
-	algorithm.Write([]byte(input))
-	return algorithm.Sum(nil)
-}
-
-func base58Encoded(bytes []byte) string {
-	encoding := base58.BitcoinEncoding
-	encoded, err := encoding.Encode(bytes)
-	if err != nil {
-		fmt.Println(err.Error())
-		os.Exit(1)
-	}
-	return string(encoded)
-}
-
-func GenerateShortLink(url string, id string) string {
-	urlHashBytes := sha256Of(url + id)
-	generateNumber := new(big.Int).SetBytes(urlHashBytes).Uint64()
-	finalString := base58Encoded([]byte(fmt.Sprintf("%d", generateNumber)))
-	return finalString[:8]
+// AddToBloomFilter add to bloom filter
+func AddToBloomFilter(key string) error {
+	db := database.GetDB()
+	return db.Redis.Do(db.Ctx, "BF.ADD", "bloom:shortlink", key).Err()
 }
 
 func SaveUrlMapping(shortURL string, longURL string, id string) error {
@@ -55,6 +35,8 @@ func SaveUrlMapping(shortURL string, longURL string, id string) error {
 	}
 
 	go func() {
+		_ = AddToBloomFilter(shortURL)
+
 		link := Link{
 			ShortURL:    shortURL,
 			OriginalUrl: longURL,

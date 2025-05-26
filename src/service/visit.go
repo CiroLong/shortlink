@@ -80,3 +80,56 @@ func SyncVisitCounts() {
 		}
 	}()
 }
+
+// RebuildBloomFilter 每天定时从数据库加载所有有效链接，重建布隆过滤器
+func RebuildBloomFilter() {
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			// 执行一次
+			rebuild()
+			// 等待下一个周期
+			<-ticker.C
+		}
+	}()
+}
+
+func rebuild() {
+	db := database.GetDB()
+	redis := db.Redis
+	ctx := db.Ctx
+
+	log.Println("开始重建布隆过滤器...")
+
+	// 清空 Bloom Filter
+	err := redis.Do(ctx, "DEL", "bloom:shortlink").Err()
+	if err != nil {
+		log.Println("删除旧布隆过滤器失败:", err)
+		return
+	}
+
+	// 查出所有未过期的链接
+	var links []Link
+	now := time.Now()
+	err = db.MySql.
+		Model(&Link{}).
+		Where("expire_at IS NULL OR expire_at > ?", now).
+		Find(&links).Error
+
+	if err != nil && err != gorm.ErrRecordNotFound {
+		log.Println("查询链接失败:", err)
+		return
+	}
+
+	// 批量添加
+	for _, link := range links {
+		err := redis.Do(ctx, "BF.ADD", "bloom:shortlink", link.ShortURL).Err()
+		if err != nil {
+			log.Printf("添加失败 [%s]: %v\n", link.ShortURL, err)
+		}
+	}
+
+	log.Printf("Bloom 重建完成，共导入 %d 条记录\n", len(links))
+}
