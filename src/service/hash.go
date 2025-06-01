@@ -2,9 +2,13 @@ package service
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
-	"github.com/itchyny/base58-go"
 	"math/big"
+
+	"github.com/CiroLong/shortlink/src/database"
+	"github.com/itchyny/base58-go"
+	"gorm.io/gorm"
 )
 
 const sha256Algorithm = "sha256"
@@ -29,18 +33,51 @@ func encodeToBase58(bytes []byte) (string, error) {
 
 // GenerateShortLink generates a short link from the given URL and ID.
 func GenerateShortLink(url string, id string) (string, error) {
-	// Compute the SHA-256 hash of the concatenated URL and ID
-	urlHashBytes := computeSHA256Hash(url + id)
+	var attempt int = 0
+	for attempt < 3 {
+		shortLink, err := generateWithSalt(url, id, attempt)
+		if err != nil {
+			return "", err
+		}
+		// 检查是否已存在
+		exists, err := checkLinkExists(shortLink)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return shortLink, nil
+		}
+		attempt++
+	}
+	return "", fmt.Errorf("failed to generate unique short link after %d attempts", attempt)
 
-	// Convert the hash bytes to a numeric value
+}
+
+func generateWithSalt(url, id string, attempt int) (string, error) {
+	// 添加salt来处理碰撞
+	input := fmt.Sprintf("%s:%s:%d", url, id, attempt)
+	urlHashBytes := computeSHA256Hash(input)
+
 	generateNumber := new(big.Int).SetBytes(urlHashBytes).Uint64()
-
-	// Encode the numeric value to Base58
 	encodedString, err := encodeToBase58([]byte(fmt.Sprintf("%d", generateNumber)))
 	if err != nil {
 		return "", fmt.Errorf("failed to generate short link: %w", err)
 	}
 
-	// Return the first 8 characters of the encoded string
 	return encodedString[:8], nil
+}
+
+func checkLinkExists(shortLink string) (exists bool, err error) {
+	// query MySQL
+	db := database.GetDB()
+
+	var link Link
+	err = db.MySql.First(&link, shortLink).Error
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return false, err
 }

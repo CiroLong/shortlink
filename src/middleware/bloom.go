@@ -1,8 +1,9 @@
 package middleware
 
 import (
-	"github.com/CiroLong/shortlink/src/database"
 	"net/http"
+
+	"github.com/CiroLong/shortlink/src/database"
 
 	"github.com/gin-gonic/gin"
 )
@@ -11,8 +12,11 @@ import (
 func BloomFilterMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		code := c.Param("code")
-		if code == "" {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "Empty short code"})
+		// code check 必须是8字符短连接
+		if len(code) != 8 {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": "invalid short link format - must be 8 characters",
+			})
 			return
 		}
 

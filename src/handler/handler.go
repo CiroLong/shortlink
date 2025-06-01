@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"net/http"
+
 	"github.com/CiroLong/shortlink/src/service"
 	"github.com/gin-gonic/gin"
-	"net/http"
 )
 
+// POST /shorten
 func ShortenURL(c *gin.Context) {
 	type UrlCreationRequest struct {
 		LongUrl string `json:"long_url" binding:"required"`
@@ -14,12 +16,14 @@ func ShortenURL(c *gin.Context) {
 	var urlCreationRequest UrlCreationRequest
 	if err := c.ShouldBind(&urlCreationRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
 	}
 
-	shortURL := service.GenerateShortLink(urlCreationRequest.LongUrl, urlCreationRequest.UserId)
+	shortURL, err := service.GenerateShortLink(urlCreationRequest.LongUrl, urlCreationRequest.UserId)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	}
 
-	err := service.SaveUrlMapping(shortURL, urlCreationRequest.LongUrl, urlCreationRequest.UserId)
+	err = service.SaveUrlMapping(shortURL, urlCreationRequest.LongUrl, urlCreationRequest.UserId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
@@ -36,6 +40,7 @@ func ShortenURL(c *gin.Context) {
 // ResolveURL GET "/:code"
 func ResolveURL(c *gin.Context) {
 	shortURL := c.Param("code")
+
 	initialLink, err := service.RetrieveInitialUrl(shortURL)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
