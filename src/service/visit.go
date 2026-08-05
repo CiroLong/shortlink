@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -37,6 +38,11 @@ type VisitSyncer struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+type pendingVisitCount struct {
+	key   string
+	count int64
 }
 
 // NewVisitSyncer 创建新的访问统计同步器
@@ -122,41 +128,55 @@ func (vs *VisitSyncer) performBatchSync() error {
 func (vs *VisitSyncer) processBatch(keys []string) error {
 	pipe := vs.db.Redis.Pipeline()
 
-	// 收集所有键的值
+	// 原子取出计数，后续访问会累加到新键，不会被本次同步删除。
 	getCmds := make([]*redis.StringCmd, len(keys))
 	for i, key := range keys {
-		getCmds[i] = pipe.Get(vs.ctx, key)
+		getCmds[i] = pipe.GetDel(vs.ctx, key)
 	}
 
-	// 执行管道
-	if _, err := pipe.Exec(vs.ctx); err != nil {
-		return fmt.Errorf("执行Redis管道失败: %w", err)
+	_, execErr := pipe.Exec(vs.ctx)
+	pending := make([]pendingVisitCount, 0, len(keys))
+	var readErr error
+	for i, key := range keys {
+		count, err := getCmds[i].Int64()
+		if errors.Is(err, redis.Nil) {
+			continue
+		}
+		if err != nil {
+			readErr = errors.Join(readErr, fmt.Errorf("获取访问计数失败 [%s]: %w", key, err))
+			continue
+		}
+		if count > 0 {
+			pending = append(pending, pendingVisitCount{key: key, count: count})
+		}
+	}
+	if execErr != nil && !errors.Is(execErr, redis.Nil) && readErr == nil {
+		readErr = fmt.Errorf("执行Redis管道失败: %w", execErr)
+	}
+	if readErr != nil {
+		return errors.Join(readErr, vs.restoreVisitCounts(pending))
+	}
+	if len(pending) == 0 {
+		return nil
 	}
 
-	// 批量更新MySQL
-	return vs.db.MySql.Transaction(func(tx *gorm.DB) error {
-		for i, key := range keys {
-			count, err := getCmds[i].Int64()
-			if err != nil {
-				log.Printf("获取访问计数失败 [%s]: %v\n", key, err)
-				continue
-			}
-
-			code := strings.TrimPrefix(key, "visit:")
+	// 批量更新MySQL；事务失败时将取出的计数合并回Redis。
+	err := vs.db.MySql.Transaction(func(tx *gorm.DB) error {
+		for _, visit := range pending {
+			code := strings.TrimPrefix(visit.key, "visit:")
 			if err := tx.Model(&Link{}).
 				Where("short_url = ?", code).
-				UpdateColumn("visit_count", gorm.Expr("visit_count + ?", count)).
+				UpdateColumn("visit_count", gorm.Expr("visit_count + ?", visit.count)).
 				Error; err != nil {
 				return fmt.Errorf("更新MySQL访问计数失败 [%s]: %w", code, err)
-			}
-
-			// 成功更新后删除Redis键
-			if err := vs.db.Redis.Del(vs.ctx, key).Err(); err != nil {
-				log.Printf("删除Redis键失败 [%s]: %v\n", key, err)
 			}
 		}
 		return nil
 	})
+	if err != nil {
+		return errors.Join(err, vs.restoreVisitCounts(pending))
+	}
+	return nil
 }
 
 // performThresholdSync 执行阈值同步
@@ -175,7 +195,7 @@ func (vs *VisitSyncer) performThresholdSync() error {
 			}
 
 			code := strings.TrimPrefix(key, "visit:")
-			if err := vs.syncSingleVisitCount(code, count); err != nil {
+			if err := vs.syncSingleVisitCount(code); err != nil {
 				log.Printf("同步单个访问计数失败 [%s]: %v\n", code, err)
 			}
 		}
@@ -189,18 +209,49 @@ func (vs *VisitSyncer) performThresholdSync() error {
 }
 
 // syncSingleVisitCount 同步单个访问计数
-func (vs *VisitSyncer) syncSingleVisitCount(code string, count int64) error {
-	err := vs.db.MySql.Model(&Link{}).
+func (vs *VisitSyncer) syncSingleVisitCount(code string) error {
+	key := fmt.Sprintf("visit:%s", code)
+	count, err := vs.takeVisitCount(key)
+	if err != nil || count == 0 {
+		return err
+	}
+
+	err = vs.db.MySql.Model(&Link{}).
 		Where("short_url = ?", code).
 		UpdateColumn("visit_count", gorm.Expr("visit_count + ?", count)).
 		Error
 	if err != nil {
-		return err
+		return errors.Join(err, vs.restoreVisitCounts([]pendingVisitCount{{key: key, count: count}}))
+	}
+	return nil
+}
+
+// takeVisitCount 原子取出计数，使之后的访问量保留在新的Redis键中。
+func (vs *VisitSyncer) takeVisitCount(key string) (int64, error) {
+	count, err := vs.db.Redis.GetDel(vs.ctx, key).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("获取访问计数失败 [%s]: %w", key, err)
+	}
+	return count, nil
+}
+
+// restoreVisitCounts 将同步失败的计数与期间新增的访问量合并。
+func (vs *VisitSyncer) restoreVisitCounts(visits []pendingVisitCount) error {
+	if len(visits) == 0 {
+		return nil
 	}
 
-	// 成功更新后删除Redis计数
-	key := fmt.Sprintf("visit:%s", code)
-	return vs.db.Redis.Del(vs.ctx, key).Err()
+	pipe := vs.db.Redis.Pipeline()
+	for _, visit := range visits {
+		pipe.IncrBy(vs.ctx, visit.key, visit.count)
+	}
+	if _, err := pipe.Exec(vs.ctx); err != nil {
+		return fmt.Errorf("恢复Redis访问计数失败: %w", err)
+	}
+	return nil
 }
 
 // cleanExpiredLinks 清理过期链接
