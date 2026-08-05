@@ -41,7 +41,7 @@ func main() {
 		})
 
 		r.POST("/shorten", handler.ShortenURL)
-		r.GET("/:code", handler.ResolveURL, middleware.BloomFilterMiddleware())
+		r.GET("/:code", middleware.BloomFilterMiddleware(), handler.ResolveURL)
 	}
 
 	srv := &http.Server{
