@@ -16,11 +16,13 @@ func ShortenURL(c *gin.Context) {
 	var urlCreationRequest UrlCreationRequest
 	if err := c.ShouldBind(&urlCreationRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	shortURL, err := service.GenerateShortLink(urlCreationRequest.LongUrl, urlCreationRequest.UserId)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	err = service.SaveUrlMapping(shortURL, urlCreationRequest.LongUrl, urlCreationRequest.UserId)
@@ -28,6 +30,7 @@ func ShortenURL(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),
 		})
+		return
 	}
 
 	host := "http://localhost/"
@@ -46,6 +49,7 @@ func ResolveURL(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "short link error",
 		})
+		return
 	}
 	c.Redirect(http.StatusFound, initialLink)
 }
